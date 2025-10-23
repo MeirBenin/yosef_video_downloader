@@ -117,43 +117,25 @@ def get_latest_video_url(channel_id, last_n=1):
 
 def download_video(video_url, output_path):
     yt = YouTube(video_url)
-    streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution')
-    # find the stream with the resolution closest to 480p
-    stream = streams.filter(res='480p').first()
-    if stream is None:
-        stream = streams.first()
-    output_dir_path = os.path.dirname(output_path)
-    file_name = os.path.basename(output_path)
-    stream.download(output_path=output_dir_path, filename=file_name)
-
-
-def download_channels_list_from_drive():
-    service = get_drive_service()
-    # get file named "channels.json" from drive ( in PARENT_FOLDER_ID)
-    quary = f"name='channels.json' and '{PARENT_FOLDER_ID}' in parents"
-    results = service.files().list(
-        q=quary,
-        spaces='drive',
-        fields='files(id, name)'
-    ).execute()
-    items = results.get('files', [])
-    if not items:
-        print('file channels.json not found')
-        return None
-    else:
-        file_id = items[0]['id']
-        request = service.files().get_media(fileId=file_id)
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            file_path = os.path.join(tmp_dir, 'channels.json')
-            with open(file_path, 'wb') as f:
-                downloader = googleapiclient.http.MediaIoBaseDownload(f, request)
-                done = False
-                while done is False:
-                    status, done = downloader.next_chunk()
-                    print(f"Download {int(status.progress() * 100)}%.")
-            with open(file_path, 'r') as f:
-                channels = json.load(f)
-            return channels
+    video_stream = yt.streams.filter(res="720p", progressive=False, file_extension="mp4").order_by('resolution').desc().first()
+    audio_stream = yt.streams.filter(only_audio=True, file_extension="mp4").order_by('abr').desc().first()
+    if not video_stream and not audio_stream:
+        s = yt.streams.get_highest_resolution()
+        print(f"Downloading video: {s.default_filename}")
+        s.download(output_path=os.path.dirname(output_path), filename=os.path.basename(output_path))
+        print("Download completed.")
+        return 
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        video_path = os.path.join(tmpdirname, 'video.mp4')
+        audio_path = os.path.join(tmpdirname, 'audio.mp4')
+        print(f"Downloading video: {video_stream.default_filename}")
+        video_stream.download(output_path=tmpdirname, filename='video.mp4')
+        print(f"Downloading audio: {audio_stream.default_filename}")
+        audio_stream.download(output_path=tmpdirname, filename='audio.mp4')
+        print("Download completed.")
+        command = ["ffmpeg", "-i", video_path, "-i", audio_path, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "copy", output_path]
+        subprocess.run(command)
+        print(f"Merged video saved as {output_path}")
 
 
 def upload_file(file_path ,file_name):
@@ -170,10 +152,11 @@ def upload_file(file_path ,file_name):
 
 
 def main():
-    delete_old_videos(days_to_keep=14)
     print(datetime.datetime.now())
-
-    channels = download_channels_list_from_drive()
+    delete_old_videos(days_to_keep=14)
+    # channels = download_channels_list_from_drive()
+    with open("channels.json","r") as f:
+        channels = json.load(f)
     if channels is None:
         print("No channels found")
         return

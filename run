@@ -1,6 +1,6 @@
 #!/bin/bash
 (
-cd /root/yosef_video_downloader
+cd /root/app
 . .venv/bin/activate
-python main.py > logs.txt 
+python main.py >> logs.txt 
 )
